@@ -2,7 +2,7 @@ use std::io::Write;
 use std::process::Command;
 use std::{fs, io};
 
-enum Methods {
+enum Method {
     GET,
     POST,
     PUT,
@@ -13,13 +13,13 @@ enum Methods {
 }
 
 struct Request {
-    method: Methods,
+    method: Method,
     url: String,
     body: Option<String>,
 }
 
 impl Request {
-    fn new(method: Methods, url: &str, body: Option<String>) -> Request {
+    fn new(method: Method, url: &str, body: Option<String>) -> Request {
         Request {
             method,
             url: url.to_string(),
@@ -29,13 +29,13 @@ impl Request {
 
     fn send(self) {
         let method = match self.method {
-            Methods::GET => "GET",
-            Methods::POST => "POST",
-            Methods::PUT => "PUT",
-            Methods::HEAD => "HEAD",
-            Methods::DELETE => "DELETE",
-            Methods::PATCH => "PATCH",
-            Methods::OPTIONS => "OPTIONS",
+            Method::GET => "GET",
+            Method::POST => "POST",
+            Method::PUT => "PUT",
+            Method::HEAD => "HEAD",
+            Method::DELETE => "DELETE",
+            Method::PATCH => "PATCH",
+            Method::OPTIONS => "OPTIONS",
         };
 
         match self.body {
@@ -100,25 +100,25 @@ fn handle_request(request: &str) {
 
         match method {
             "GET" => {
-                Request::new(Methods::GET, url, None).send();
+                Request::new(Method::GET, url, None).send();
             }
             "POST" => {
-                Request::new(Methods::POST, url, body).send();
+                Request::new(Method::POST, url, body).send();
             }
             "PUT" => {
-                Request::new(Methods::PUT, url, body).send();
+                Request::new(Method::PUT, url, body).send();
             }
             "HEAD" => {
-                Request::new(Methods::HEAD, url, None).send();
+                Request::new(Method::HEAD, url, None).send();
             }
             "DELETE" => {
-                Request::new(Methods::DELETE, url, body).send();
+                Request::new(Method::DELETE, url, body).send();
             }
             "PATCH" => {
-                Request::new(Methods::PATCH, url, body).send();
+                Request::new(Method::PATCH, url, body).send();
             }
             "OPTIONS" => {
-                Request::new(Methods::OPTIONS, url, None).send();
+                Request::new(Method::OPTIONS, url, None).send();
             }
             _ => println!("Invalid method"),
         };
