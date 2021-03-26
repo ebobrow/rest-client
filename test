@@ -1,4 +1,37 @@
+#
+# Get the slash route
+#
 GET http://localhost:3000
 
+#
+# Register a new user
+#
 GET http://localhost:3000/auth/register
 
+
+
+
+#
+# POST to the slash route
+#
+POST http://localhost:3000
+{
+	"value": 1
+}
+
+PUT http://localhost:3000
+{
+	"value": 2345
+}
+
+PATCH http://localhost:3000
+{
+	"value": 0
+}
+
+DELETE http://localhost:3000
+{
+	"value": 123
+}
+
+OPTIONS http://localhost:3000

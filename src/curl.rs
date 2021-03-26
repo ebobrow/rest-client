@@ -1,11 +1,15 @@
 use std::io::Write;
-use std::ops::Add;
 use std::process::Command;
 use std::{fs, io};
 
 enum Methods {
     GET,
     POST,
+    PUT,
+    HEAD,
+    DELETE,
+    PATCH,
+    OPTIONS,
 }
 
 struct Request {
@@ -15,63 +19,109 @@ struct Request {
 }
 
 impl Request {
-    fn new(method: Methods, url: &str) -> Request {
+    fn new(method: Methods, url: &str, body: Option<String>) -> Request {
         Request {
             method,
-            url: url.to_owned(),
-            body: None,
-        }
-    }
-
-    fn update_body(mut self, to_add: String) {
-        match self.body {
-            Some(body) => self.body = Some(format!("{}\n{}", body, to_add)),
-            None => self.body = Some(to_add),
+            url: url.to_string(),
+            body,
         }
     }
 
     fn send(self) {
-        match self.method {
-            Methods::GET => {
+        let method = match self.method {
+            Methods::GET => "GET",
+            Methods::POST => "POST",
+            Methods::PUT => "PUT",
+            Methods::HEAD => "HEAD",
+            Methods::DELETE => "DELETE",
+            Methods::PATCH => "PATCH",
+            Methods::OPTIONS => "OPTIONS",
+        };
+
+        match self.body {
+            Some(body) => {
                 let req = Command::new("curl")
+                    .arg("-X")
+                    .arg(method)
+                    .arg("-H")
+                    .arg("Content-Type: application/json")
+                    .arg("-d")
+                    .arg(body)
                     .arg(self.url)
+                    .arg("-i")
                     .output()
                     .expect("Something went wrong");
                 io::stdout().write_all(&req.stdout).unwrap();
             }
-            _ => {}
-        }
+            None => {
+                let req = Command::new("curl")
+                    .arg("-X")
+                    .arg(method)
+                    .arg(self.url)
+                    .arg("-i")
+                    .output()
+                    .expect("Something went wrong");
+                io::stdout().write_all(&req.stdout).unwrap();
+            }
+        };
     }
 }
 
 pub fn parse_input(filename: &str) {
     let contents = fs::read_to_string(filename).expect("Something went wrong reading the file");
 
-    let mut current_request: Option<Request> = None;
-    for line in contents.lines() {
-        match current_request {
-            Some(ref mut request) => {
-                // TODO
-            }
-            None => {
-                if !line.is_empty() && !line.starts_with("#") {
-                    let mut words = line.split(' ');
-                    let method = words.next().expect("Invalid syntax");
-                    let url = words.next().expect("Invalid syntax");
+    let requests = contents.split("\n\n");
+    for request in requests {
+        handle_request(request);
+    }
+}
 
-                    match method {
-                        "GET" => {
-                            println!("GET {}", url);
-                            Request::new(Methods::GET, url).send();
-                            println!("\n");
-                        }
-                        "POST" => {
-                            current_request = Some(Request::new(Methods::POST, url));
-                        }
-                        _ => println!("Invalid syntax"),
-                    }
-                }
-            }
+fn handle_request(request: &str) {
+    let mut lines = request
+        .lines()
+        .filter(|line| !line.is_empty() && !line.starts_with('#'));
+
+    if let Some(line) = lines.next() {
+        println!("\n---------------\n");
+        println!("{}", line);
+        let mut words = line.split(' ');
+
+        let method = words.next().expect("Invalid syntax");
+        let url = words.next().expect("Invalid syntax");
+
+        let body: String = lines.collect();
+        let body = if body.is_empty() {
+            println!();
+            None
+        } else {
+            println!("Body: {}", body.trim());
+            Some(body)
         };
+
+        match method {
+            "GET" => {
+                Request::new(Methods::GET, url, None).send();
+            }
+            "POST" => {
+                Request::new(Methods::POST, url, body).send();
+            }
+            "PUT" => {
+                Request::new(Methods::PUT, url, body).send();
+            }
+            "HEAD" => {
+                Request::new(Methods::HEAD, url, None).send();
+            }
+            "DELETE" => {
+                Request::new(Methods::DELETE, url, body).send();
+            }
+            "PATCH" => {
+                Request::new(Methods::PATCH, url, body).send();
+            }
+            "OPTIONS" => {
+                Request::new(Methods::OPTIONS, url, None).send();
+            }
+            _ => println!("Invalid method"),
+        };
+        println!();
     }
 }
