@@ -2,24 +2,14 @@ use std::io::Write;
 use std::process::Command;
 use std::{fs, io};
 
-enum Method {
-    GET,
-    POST,
-    PUT,
-    HEAD,
-    DELETE,
-    PATCH,
-    OPTIONS,
-}
-
 struct Request {
-    method: Method,
+    method: String,
     url: String,
     body: Option<String>,
 }
 
 impl Request {
-    fn new(method: Method, url: &str, body: Option<String>) -> Request {
+    fn new(method: String, url: &str, body: Option<String>) -> Request {
         Request {
             method,
             url: url.to_string(),
@@ -28,42 +18,30 @@ impl Request {
     }
 
     fn send(self) {
-        let method = match self.method {
-            Method::GET => "GET",
-            Method::POST => "POST",
-            Method::PUT => "PUT",
-            Method::HEAD => "HEAD",
-            Method::DELETE => "DELETE",
-            Method::PATCH => "PATCH",
-            Method::OPTIONS => "OPTIONS",
-        };
-
-        match self.body {
+        let body_content: String; // TODO: Is this the best way to do this?
+        let args = match self.body {
             Some(body) => {
-                let req = Command::new("curl")
-                    .arg("-X")
-                    .arg(method)
-                    .arg("-H")
-                    .arg("Content-Type: application/json")
-                    .arg("-d")
-                    .arg(body)
-                    .arg(self.url)
-                    .arg("-i")
-                    .output()
-                    .expect("Something went wrong");
-                io::stdout().write_all(&req.stdout).unwrap();
+                body_content = body;
+                vec![
+                    "-X",
+                    &self.method,
+                    "-H",
+                    "Content-Type: application/json",
+                    "-d",
+                    &body_content,
+                    &self.url,
+                    "-i",
+                ]
             }
             None => {
-                let req = Command::new("curl")
-                    .arg("-X")
-                    .arg(method)
-                    .arg(self.url)
-                    .arg("-i")
-                    .output()
-                    .expect("Something went wrong");
-                io::stdout().write_all(&req.stdout).unwrap();
+                vec!["-X", &self.method, &self.url, "-i"]
             }
         };
+        let output = Command::new("curl")
+            .args(&args)
+            .output()
+            .expect("Something went wrong");
+        io::stdout().write_all(&output.stdout).unwrap();
     }
 }
 
@@ -86,41 +64,26 @@ fn handle_request(request: &str) {
         println!("{}", line);
         let mut words = line.split(' ');
 
-        let method = words.next().expect("Invalid syntax");
-        let url = words.next().expect("Invalid syntax");
+        let method = words.next().expect("Invalid syntax: Method required");
+        let url = words.next().expect("Invalid syntax: URL required");
 
         let body: String = lines.collect();
         let body = if body.is_empty() {
             println!();
             None
         } else {
-            println!("Body: {}", body.trim());
+            println!("Body: {}\n", body.trim());
             Some(body)
         };
 
         match method {
-            "GET" => {
-                Request::new(Method::GET, url, None).send();
+            "GET" | "HEAD" | "OPTIONS" => {
+                Request::new(method.to_string(), url, None).send();
             }
-            "POST" => {
-                Request::new(Method::POST, url, body).send();
+            "POST" | "PUT" | "DELETE" | "PATCH" => {
+                Request::new(method.to_string(), url, body).send();
             }
-            "PUT" => {
-                Request::new(Method::PUT, url, body).send();
-            }
-            "HEAD" => {
-                Request::new(Method::HEAD, url, None).send();
-            }
-            "DELETE" => {
-                Request::new(Method::DELETE, url, body).send();
-            }
-            "PATCH" => {
-                Request::new(Method::PATCH, url, body).send();
-            }
-            "OPTIONS" => {
-                Request::new(Method::OPTIONS, url, None).send();
-            }
-            _ => println!("Invalid method"),
+            _ => println!("Invalid method: {}", method),
         };
         println!();
     }
