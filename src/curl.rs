@@ -2,73 +2,80 @@ use std::io::Write;
 use std::process::Command;
 use std::{fs, io};
 
-struct Request {
-    text: String,
-    method: String,
-    // TODO: This is not accurate b/c comments and blank lines are filtered out
-    first_line: u32,
-    last_line: u32,
-}
-
 const METHODS: [&str; 7] = ["GET", "HEAD", "OPTIONS", "POST", "PUT", "DELETE", "PATCH"];
 
-impl Request {
-    fn new(text: &str, method: &str, first_line: u32, last_line: u32) -> Request {
-        Request {
+#[derive(Clone)]
+struct Line {
+    text: String,
+    number: usize,
+}
+
+impl Line {
+    fn new(text: &str, number: usize) -> Line {
+        Line {
             text: text.to_string(),
+            number,
+        }
+    }
+}
+
+struct Request {
+    lines: Vec<Line>,
+    method: String,
+}
+
+impl Request {
+    fn new(lines: Vec<Line>, method: &str) -> Request {
+        Request {
+            lines,
             method: method.to_string(),
-            first_line,
-            last_line,
         }
     }
 
-    fn error(&self, line: u32, msg: &str) {
+    fn error(&self, line: usize, msg: &str) {
         println!("Error (line {}): {}", line, msg);
     }
 
-    fn parse(self) {
-        let mut lines = self.text.lines();
-        let base_url = lines.next();
-        let mut base_url = match base_url {
-            Some(u) => u.to_string(),
-            None => {
-                self.error(self.first_line, "Expected URL");
-                return;
+    fn get_uri(&self) -> Result<String, String> {
+        let mut host = self.lines[0].text.to_string();
+        let last_line = &self.lines[self.lines.len() - 1];
+        let mut words = last_line.text.split(' ');
+        words.next();
+        let location = match words.next() {
+            Some(location) if !location.is_empty() => location,
+            _ => {
+                self.error(last_line.number, "Expected location");
+                return Err("Invalid syntax".to_string());
             }
         };
+        host.push_str(&location);
+        Ok(host)
+    }
 
-        let mut cur_line = self.first_line;
+    fn parse(&self) -> Result<(), String> {
+        let uri = match self.get_uri() {
+            Ok(uri) => uri,
+            Err(e) => return Err(e),
+        };
 
         let mut in_body = false;
         let mut body = "".to_string();
 
         let mut headers: Vec<&str> = vec![];
 
-        for line in lines {
-            cur_line += 1;
-            if cur_line == self.last_line {
-                let mut words = line.split(' ');
-                words.next();
-                let url = match words.next() {
-                    Some(u) => u,
-                    None => {
-                        self.error(self.last_line, "Expected URL");
-                        ""
-                    }
-                };
-                base_url.push_str(url);
-            } else if in_body || line.starts_with('{') {
-                body.push_str(line);
+        for line in self.lines[1..self.lines.len() - 1].iter() {
+            if in_body || line.text.starts_with('{') {
+                body.push_str(&line.text);
                 // TODO: Nested json, like:
                 // {
                 // "value": {
                 // "inner_value": "sfgsdfg"
                 // } <- Would trigger end
                 // }
-                in_body = !line.ends_with('}');
+                in_body = !line.text.ends_with('}');
             } else {
                 // Assume headers
-                headers.push(line);
+                headers.push(&line.text);
             }
         }
 
@@ -81,42 +88,43 @@ impl Request {
             args.push("-d");
             args.push(&body);
         }
-        args.push(&base_url);
+        args.push(&uri);
         args.push("-i");
 
-        println!("{} {}\n", self.method, base_url);
+        println!("{} {}\n", self.method, uri);
 
         let output = Command::new("curl")
             .args(&args)
             .output()
             .expect("Something went wrong");
         io::stdout().write_all(&output.stdout).unwrap();
+        Ok(())
     }
 }
 
 pub fn parse_input(filename: &str) {
     let contents = fs::read_to_string(filename).expect("Something went wrong reading the file");
 
-    let mut cur_idx = 0;
-    let mut start_idx = 0;
-    let mut cur_line = 0;
-    let mut start_line = 1;
+    let mut n = 0;
+    let mut lines: Vec<Line> = vec![];
 
-    let filtered: String = contents
-        .lines()
-        .filter(|line| !line.is_empty() && !line.starts_with('#'))
-        .map(|line| format!("{}\n", line)) // TODO: this feels hacky
-        .collect();
+    for line in contents.lines() {
+        n += 1;
+        if !line.is_empty() && !line.starts_with('#') {
+            lines.push(Line::new(line, n));
+        }
+    }
 
-    for line in filtered.lines() {
-        cur_idx += line.len() + 1;
-        cur_line += 1;
+    let mut start_line = 0;
+    n = 0;
+
+    for line in &lines {
+        n += 1;
         for method in METHODS.iter() {
-            if line.starts_with(method) {
-                println!("\n---------------\n");
-                Request::new(&filtered[start_idx..cur_idx], method, start_line, cur_line).parse();
-                start_idx = cur_idx;
-                start_line = cur_line + 1;
+            if line.text.starts_with(method) {
+                println!("\n\n---------------");
+                let _ = Request::new(lines[start_line..n].to_vec(), method).parse();
+                start_line = n;
             }
         }
     }
