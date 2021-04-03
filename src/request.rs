@@ -1,6 +1,7 @@
 use ansi_term::Colour::*;
 use colored_json::prelude::*;
 use colored_json::{Color, Styler};
+use reqwest::blocking::{Client, RequestBuilder};
 use std::fs;
 
 // options not supported by reqwest
@@ -34,8 +35,8 @@ impl Request {
         }
     }
 
-    fn error(&self, line: usize, msg: &str) {
-        println!("Error (line {}): {}", line, msg);
+    fn error(&self, line: usize, msg: &str) -> String {
+        format!("Error (line {}): {}", line, msg)
     }
 
     fn get_uri(&self) -> Result<String, String> {
@@ -46,18 +47,14 @@ impl Request {
         let location = match words.next() {
             Some(location) if !location.is_empty() => location,
             _ => {
-                self.error(last_line.number, "Expected location");
-                return Err("Invalid syntax".to_string());
+                return Err(self.error(last_line.number, "Expected location"));
             }
         };
         host.push_str(&location);
         Ok(host)
     }
 
-    fn parse(
-        &self,
-        client: &reqwest::blocking::Client,
-    ) -> Result<reqwest::blocking::RequestBuilder, String> {
+    fn parse(&self, client: &Client) -> Result<RequestBuilder, String> {
         let uri = match self.get_uri() {
             Ok(uri) => uri,
             Err(e) => return Err(e),
@@ -79,7 +76,7 @@ impl Request {
             }
         }
 
-        let mut req: reqwest::blocking::RequestBuilder = match &self.method[..] {
+        let mut req: RequestBuilder = match &self.method[..] {
             "GET" => client.get(&uri),
             "POST" => client.post(&uri),
             "PUT" => client.put(&uri),
@@ -88,8 +85,9 @@ impl Request {
             "PATCH" => client.patch(&uri),
             //"OPTIONS" => client.options(uri), // Uh oh
             method => {
-                self.error(self.lines[0].number, &format!("Invalid method: {}", method));
-                return Err("".to_string());
+                return Err(
+                    self.error(self.lines[0].number, &format!("Invalid method: {}", method))
+                );
             }
         };
 
@@ -98,15 +96,13 @@ impl Request {
             let name = match parts.next() {
                 Some(name) => name,
                 _ => {
-                    self.error(header.number, "Invalid header syntax");
-                    return Err("Syntax error".to_string());
+                    return Err(self.error(header.number, "Invalid header syntax"));
                 }
             };
             let value = match parts.next() {
-                Some(name) => name,
+                Some(name) => name.trim(),
                 _ => {
-                    self.error(header.number, "Invalid header syntax");
-                    return Err("Syntax error".to_string());
+                    return Err(self.error(header.number, "Invalid header syntax"));
                 }
             };
 
@@ -129,7 +125,7 @@ pub fn parse_input(filename: &str) {
     let enabled = ansi_term::enable_ansi_support();
 
     let contents = fs::read_to_string(filename).expect("Something went wrong reading the file");
-    let client = reqwest::blocking::Client::new();
+    let client = Client::new();
 
     let mut n = 0;
     let mut lines: Vec<Line> = vec![];
@@ -153,11 +149,11 @@ pub fn parse_input(filename: &str) {
                 match req {
                     Ok(req) => {
                         send_req(req).unwrap_or_else(|e| {
-                            println!("Error: {}", e);
+                            println!("{}", e);
                         });
                     }
                     Err(e) => {
-                        println!("Error: {}", e);
+                        println!("{}", e);
                     }
                 }
 
@@ -167,7 +163,7 @@ pub fn parse_input(filename: &str) {
     }
 }
 
-fn send_req(req: reqwest::blocking::RequestBuilder) -> Result<(), reqwest::Error> {
+fn send_req(req: RequestBuilder) -> Result<(), reqwest::Error> {
     let res = match req.send() {
         Ok(res) => res,
         Err(e) => {
@@ -223,4 +219,101 @@ fn send_req(req: reqwest::blocking::RequestBuilder) -> Result<(), reqwest::Error
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn setup(text: &str, method: &str) -> Result<RequestBuilder, String> {
+        let mut n = 0;
+        let mut lines = vec![];
+        for line in text.split("\n") {
+            n += 1;
+            lines.push(Line::new(line, n));
+        }
+        let client = Client::new();
+        Request::new(lines, method).parse(&client)
+    }
+
+    #[test]
+    fn get() {
+        let req = setup("https://example.com\nGET /route", "GET")
+            .unwrap()
+            .build()
+            .unwrap();
+
+        assert_eq!(req.method().as_str(), "GET");
+        assert_eq!(
+            *req.url(),
+            reqwest::Url::parse("https://example.com/route").unwrap()
+        );
+        assert!(req.headers().is_empty());
+        match req.body() {
+            Some(_) => panic!("Body should be empty"),
+            None => {} // OK
+        }
+    }
+
+    #[test]
+    fn no_location_specified() {
+        let req = setup("http://localhost:8080\nPUT ", "PUT");
+        match req {
+            Ok(_) => {
+                panic!("Expected error");
+            }
+            Err(e) => {
+                assert_eq!(e, "Error (line 2): Expected location");
+            }
+        }
+    }
+
+    #[test]
+    fn post() {
+        let text = r#"http://localhost
+Content-Type: application/json
+{
+    "key": "value"
+}
+POST /"#;
+        let req = setup(text, "POST").unwrap().build().unwrap();
+
+        assert_eq!(req.method().as_str(), "POST");
+        assert_eq!(
+            *req.url(),
+            reqwest::Url::parse("http://localhost/").unwrap()
+        );
+        let headers = req.headers();
+        assert_eq!(headers.len(), 1);
+        assert_eq!(headers.get("content-type").unwrap(), &"application/json");
+        match req.body() {
+            Some(body) => {
+                let expected_body = r#"{    "key": "value"}"#;
+                assert_eq!(
+                    body.as_bytes().unwrap(),
+                    reqwest::blocking::Body::from(expected_body)
+                        .as_bytes()
+                        .unwrap()
+                );
+            }
+            None => panic!("Expected body"),
+        }
+    }
+
+    #[test]
+    fn invalid_header() {
+        let text = "https://www.example.com
+Content-Type: text/html
+other header
+DELETE /api/thing";
+        let req = setup(text, "DELETE");
+        match req {
+            Ok(_) => {
+                panic!("Expected error");
+            }
+            Err(e) => {
+                assert_eq!(e, "Error (line 3): Invalid header syntax");
+            }
+        }
+    }
 }

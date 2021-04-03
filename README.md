@@ -5,7 +5,7 @@
 http://localhost:3000
 GET /
 
-# POST to /api/auth/register
+# POST to /auth/register
 http://localhost:3000
 
 # Headers
