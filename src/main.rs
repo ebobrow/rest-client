@@ -1,7 +1,6 @@
 use std::env;
 mod request;
 
-#[macro_use]
 extern crate json;
 
 fn main() {

@@ -1,8 +1,7 @@
-use json;
-use reqwest;
 use std::fs;
 
-const METHODS: [&str; 7] = ["GET", "HEAD", "OPTIONS", "POST", "PUT", "DELETE", "PATCH"];
+// options not supported by reqwest
+const METHODS: [&str; 6] = ["GET", "HEAD", "POST", "PUT", "DELETE", "PATCH"];
 
 #[derive(Clone)]
 struct Line {
@@ -52,7 +51,10 @@ impl Request {
         Ok(host)
     }
 
-    fn parse(&self) -> Result<(), String> {
+    fn parse(
+        &self,
+        client: &reqwest::blocking::Client,
+    ) -> Result<reqwest::blocking::RequestBuilder, String> {
         let uri = match self.get_uri() {
             Ok(uri) => uri,
             Err(e) => return Err(e),
@@ -64,22 +66,15 @@ impl Request {
         let mut headers: Vec<&Line> = vec![];
 
         for line in self.lines[1..self.lines.len() - 1].iter() {
-            if in_body || line.text.starts_with('{') {
+            // Don't like this. Very hacky
+            if in_body || line.text.starts_with('{') || line.text.contains('}') {
                 body.push_str(&line.text);
-                // TODO: Nested json, like:
-                // {
-                // "value": {
-                // "inner_value": "sfgsdfg"
-                // } <- Would trigger end
-                // }
                 in_body = !line.text.ends_with('}');
             } else {
                 // Assume headers
                 headers.push(line);
             }
         }
-
-        let client = reqwest::blocking::Client::new();
 
         let mut req: reqwest::blocking::RequestBuilder = match &self.method[..] {
             "GET" => client.get(&uri),
@@ -115,37 +110,20 @@ impl Request {
             req = req.header(name, value);
         }
 
-        match &body[..] {
-            "" => {}
-            _ => {
-                req = req.body(body);
-            }
-        }
+        req = match &body[..] {
+            "" => req,
+            _ => req.body(body),
+        };
 
         println!("{} {}\n", self.method, uri);
 
-        let res = req.send().unwrap();
-        println!(
-            "{} {}\n",
-            res.status().as_u16(),
-            res.status().canonical_reason().unwrap()
-        );
-        for (key, value) in res.headers().iter() {
-            println!("{:?}: {:?}", key, value);
-        }
-        println!();
-        if res.headers().get("content-type").unwrap() == "application/json; charset=utf-8" {
-            let res_body = json::parse(&res.text().unwrap()).unwrap();
-            println!("{:#}", res_body);
-        } else {
-            println!("{}", res.text().unwrap());
-        }
-        Ok(())
+        Ok(req)
     }
 }
 
 pub fn parse_input(filename: &str) {
     let contents = fs::read_to_string(filename).expect("Something went wrong reading the file");
+    let client = reqwest::blocking::Client::new();
 
     let mut n = 0;
     let mut lines: Vec<Line> = vec![];
@@ -164,10 +142,53 @@ pub fn parse_input(filename: &str) {
         n += 1;
         for method in METHODS.iter() {
             if line.text.starts_with(method) {
-                println!("\n\n---------------");
-                let _ = Request::new(lines[start_line..n].to_vec(), method).parse();
+                println!("\n---------------");
+                let req = Request::new(lines[start_line..n].to_vec(), method).parse(&client);
+                match req {
+                    Ok(req) => {
+                        send_req(req).unwrap_or_else(|e| {
+                            println!("Error: {}", e);
+                        });
+                    }
+                    Err(e) => {
+                        println!("Error: {}", e);
+                    }
+                }
+
                 start_line = n;
             }
         }
     }
+}
+
+fn send_req(req: reqwest::blocking::RequestBuilder) -> Result<(), reqwest::Error> {
+    let res = match req.send() {
+        Ok(res) => res,
+        Err(e) => {
+            return Err(e);
+        }
+    };
+
+    let status = res.status();
+    let reason = match status.canonical_reason() {
+        Some(reason) => reason,
+        None => "",
+    };
+    println!("{} {}\n", status.as_u16(), reason);
+
+    for (key, value) in res.headers().iter() {
+        println!("{:?}: {:?}", key, value);
+    }
+    println!();
+
+    let default = &reqwest::header::HeaderValue::from_str("").unwrap();
+    let content_type = res.headers().get("content-type").unwrap_or(default);
+    if content_type == "application/json; charset=utf-8" {
+        let res_body = json::parse(&res.text().unwrap()).unwrap();
+        println!("{:#}", res_body);
+    } else {
+        println!("{}", res.text().unwrap());
+    }
+
+    Ok(())
 }
