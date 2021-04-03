@@ -1,3 +1,6 @@
+use ansi_term::Colour::*;
+use colored_json::prelude::*;
+use colored_json::{Color, Styler};
 use std::fs;
 
 // options not supported by reqwest
@@ -115,13 +118,16 @@ impl Request {
             _ => req.body(body),
         };
 
-        println!("{} {}\n", self.method, uri);
+        println!("{} {}\n", self.method, Yellow.paint(uri));
 
         Ok(req)
     }
 }
 
 pub fn parse_input(filename: &str) {
+    #[cfg(windows)]
+    let enabled = ansi_term::enable_ansi_support();
+
     let contents = fs::read_to_string(filename).expect("Something went wrong reading the file");
     let client = reqwest::blocking::Client::new();
 
@@ -174,17 +180,43 @@ fn send_req(req: reqwest::blocking::RequestBuilder) -> Result<(), reqwest::Error
         Some(reason) => reason,
         None => "",
     };
-    println!("{} {}\n", status.as_u16(), reason);
+    let code = status.as_str();
+    let code = if status.is_success() {
+        Green.paint(code)
+    } else if status.is_redirection() {
+        Blue.paint(code)
+    } else if status.is_informational() {
+        Yellow.paint(code)
+    } else {
+        Red.paint(code)
+    };
+    println!("{} {}", code, reason);
 
     for (key, value) in res.headers().iter() {
-        println!("{:?}: {:?}", key, value);
+        println!("{}: {:?}", Cyan.paint(key.as_str()), value);
     }
     println!();
 
     let default = &reqwest::header::HeaderValue::from_str("").unwrap();
     let content_type = res.headers().get("content-type").unwrap_or(default);
     if content_type == "application/json; charset=utf-8" {
-        let res_body = json::parse(&res.text().unwrap()).unwrap();
+        let res_body = res
+            .text()
+            .unwrap()
+            .to_colored_json_with_styler(
+                ColorMode::default().eval(),
+                Styler {
+                    key: Color::Green.normal(),
+                    string_value: Color::Cyan.normal(),
+                    integer_value: Color::Yellow.normal(),
+                    float_value: Color::Yellow.normal(),
+                    object_brackets: Default::default(),
+                    array_brackets: Default::default(),
+                    bool_value: Color::Red.normal(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
         println!("{:#}", res_body);
     } else {
         println!("{}", res.text().unwrap());
