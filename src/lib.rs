@@ -56,7 +56,7 @@ impl Request {
         Ok(host)
     }
 
-    fn parse(&self, client: &Client) -> Result<RequestBuilder, String> {
+    fn parse(&self, client: &Client, color: bool) -> Result<RequestBuilder, String> {
         let uri = match self.get_uri() {
             Ok(uri) => uri,
             Err(e) => return Err(e),
@@ -116,7 +116,11 @@ impl Request {
             _ => req.body(body),
         };
 
-        println!("{} {}\n", self.method, Yellow.paint(uri));
+        if color {
+            println!("{} {}\n", self.method, Yellow.paint(uri));
+        } else {
+            println!("{} {}\n", self.method, uri);
+        };
 
         Ok(req)
     }
@@ -147,10 +151,11 @@ pub fn run(config: cli::Cli) {
         for method in METHODS.iter() {
             if line.text.starts_with(method) {
                 println!("\n---------------");
-                let req = Request::new(lines[start_line..n].to_vec(), method).parse(&client);
+                let req = Request::new(lines[start_line..n].to_vec(), method)
+                    .parse(&client, !config.no_color);
                 match req {
                     Ok(req) => {
-                        send_req(req, config.concise).unwrap_or_else(|e| {
+                        send_req(req, config.verbose, !config.no_color).unwrap_or_else(|e| {
                             println!("{}", e);
                         });
                     }
@@ -165,7 +170,7 @@ pub fn run(config: cli::Cli) {
     }
 }
 
-fn send_req(req: RequestBuilder, concise: bool) -> Result<(), reqwest::Error> {
+fn send_req(req: RequestBuilder, verbose: bool, color: bool) -> Result<(), reqwest::Error> {
     let res = match req.send() {
         Ok(res) => res,
         Err(e) => {
@@ -179,32 +184,45 @@ fn send_req(req: RequestBuilder, concise: bool) -> Result<(), reqwest::Error> {
         None => "",
     };
     let code = status.as_str();
-    let code = if status.is_success() {
-        Green.paint(code)
-    } else if status.is_redirection() {
-        Blue.paint(code)
-    } else if status.is_informational() {
-        Yellow.paint(code)
+    if color {
+        let code = if status.is_success() {
+            Green.paint(code)
+        } else if status.is_redirection() {
+            Blue.paint(code)
+        } else if status.is_informational() {
+            Yellow.paint(code)
+        } else {
+            Red.paint(code)
+        };
+        println!("{} {}", code, reason);
     } else {
-        Red.paint(code)
-    };
-    println!("{} {}", code, reason);
+        println!("{} {}", code, reason);
+    }
 
-    if !concise {
+    if verbose {
         for (key, value) in res.headers().iter() {
-            println!("{}: {:?}", Cyan.paint(key.as_str()), value);
+            if color {
+                println!("{}: {:?}", Cyan.paint(key.as_str()), value);
+            } else {
+                println!("{}: {:?}", key.as_str(), value);
+            }
         }
         println!();
     }
 
     let default = &reqwest::header::HeaderValue::from_str("").unwrap();
     let content_type = res.headers().get("content-type").unwrap_or(default);
+    // Regex?
     if content_type == "application/json; charset=utf-8" {
+        let color_mode = match color {
+            true => ColorMode::On,
+            false => ColorMode::Off,
+        };
         let res_body = res
             .text()
             .unwrap()
             .to_colored_json_with_styler(
-                ColorMode::default().eval(),
+                color_mode,
                 Styler {
                     key: Color::Green.normal(),
                     string_value: Color::Cyan.normal(),
@@ -217,7 +235,7 @@ fn send_req(req: RequestBuilder, concise: bool) -> Result<(), reqwest::Error> {
                 },
             )
             .unwrap();
-        println!("{:#}", res_body);
+        println!("{}", res_body);
     } else {
         println!("{}", res.text().unwrap());
     }
