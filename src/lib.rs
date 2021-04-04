@@ -1,3 +1,5 @@
+pub mod cli;
+
 use ansi_term::Colour::*;
 use colored_json::prelude::*;
 use colored_json::{Color, Styler};
@@ -120,11 +122,11 @@ impl Request {
     }
 }
 
-pub fn parse_input(filename: &str) {
+pub fn run(config: cli::Cli) {
     #[cfg(windows)]
     let enabled = ansi_term::enable_ansi_support();
 
-    let contents = fs::read_to_string(filename).expect("Something went wrong reading the file");
+    let contents = fs::read_to_string(config.path).expect("Something went wrong reading the file");
     let client = Client::new();
 
     let mut n = 0;
@@ -148,7 +150,7 @@ pub fn parse_input(filename: &str) {
                 let req = Request::new(lines[start_line..n].to_vec(), method).parse(&client);
                 match req {
                     Ok(req) => {
-                        send_req(req).unwrap_or_else(|e| {
+                        send_req(req, config.concise).unwrap_or_else(|e| {
                             println!("{}", e);
                         });
                     }
@@ -163,7 +165,7 @@ pub fn parse_input(filename: &str) {
     }
 }
 
-fn send_req(req: RequestBuilder) -> Result<(), reqwest::Error> {
+fn send_req(req: RequestBuilder, concise: bool) -> Result<(), reqwest::Error> {
     let res = match req.send() {
         Ok(res) => res,
         Err(e) => {
@@ -188,10 +190,12 @@ fn send_req(req: RequestBuilder) -> Result<(), reqwest::Error> {
     };
     println!("{} {}", code, reason);
 
-    for (key, value) in res.headers().iter() {
-        println!("{}: {:?}", Cyan.paint(key.as_str()), value);
+    if !concise {
+        for (key, value) in res.headers().iter() {
+            println!("{}: {:?}", Cyan.paint(key.as_str()), value);
+        }
+        println!();
     }
-    println!();
 
     let default = &reqwest::header::HeaderValue::from_str("").unwrap();
     let content_type = res.headers().get("content-type").unwrap_or(default);
