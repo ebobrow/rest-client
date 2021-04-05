@@ -1,8 +1,11 @@
 [package]
-name = "rest_client"
+name = "rest_cli"
 version = "0.1.0"
 authors = ["Elliot Bobrow <elliotgreybobrow@gmail.com>"]
 edition = "2018"
+description = "Send HTTP requests from the command line"
+repository = "https://github.com/ebobrow/rest-client"
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

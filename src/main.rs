@@ -1,5 +1,5 @@
-use rest_client::cli::Cli;
-use rest_client::run;
+use rest_cli::cli::Cli;
+use rest_cli::run;
 use structopt::StructOpt;
 
 fn main() {

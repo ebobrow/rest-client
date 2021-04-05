@@ -1,11 +1,31 @@
-# REST Client
+# REST Cli
+
+Send HTTP requests from the command line.
+
+### Usage
 
 ```
-# GET slash route
+rest_cli <file>
+```
+
+where `file` contains your HTTP requests.
+
+Supported methods:
+- GET
+- POST
+- PUT
+- PATCH
+- DELETE
+- HEAD
+
+### Example
+
+```
+### GET slash route ###
 http://localhost:3000
 GET /
 
-# POST to /auth/register
+### POST to /auth/register ###
 http://localhost:3000
 
 # Headers
@@ -14,8 +34,8 @@ Authorization: bearer alghdlaiusdflhsadfkjsadf
 
 # Body
 {
-	"username": "name",
-	"password": "password123"
+    "username": "name",
+    "password": "password123"
 }
 
 POST /auth/register
