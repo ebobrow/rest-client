@@ -1,7 +1,7 @@
 pub mod cli;
 
-use ansi_term::Colour::*;
-use colored_json::prelude::*;
+use ansi_term::Colour::{Blue, Cyan, Green, Red, Yellow};
+use colored_json::prelude::{ColorMode, ToColoredJson};
 use colored_json::{Color, Styler};
 use reqwest::blocking::{Client, RequestBuilder};
 use std::fs;
@@ -179,10 +179,7 @@ fn send_req(req: RequestBuilder, verbose: bool, color: bool) -> Result<(), reqwe
     };
 
     let status = res.status();
-    let reason = match status.canonical_reason() {
-        Some(reason) => reason,
-        None => "",
-    };
+    let reason = status.canonical_reason().unwrap_or("");
     let code = status.as_str();
     if color {
         let code = if status.is_success() {
@@ -255,7 +252,7 @@ mod tests {
             lines.push(Line::new(line, n));
         }
         let client = Client::new();
-        Request::new(lines, method).parse(&client)
+        Request::new(lines, method).parse(&client, false)
     }
 
     #[test]
